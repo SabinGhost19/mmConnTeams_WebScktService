@@ -1,3 +1,4 @@
+// handle websocket connections
 export default (io, apiService) => {
   const activeUsers = new Map();
   const userChannels = new Map();
@@ -15,34 +16,31 @@ export default (io, apiService) => {
       });
     });
 
-    // Test STOMP endpoint
+    // subscribe to test room
     socket.on("subscribe-to-test", (data) => {
       socket.join("test-room");
       socket.emit("test-subscribed", { success: true });
     });
 
-    // Gestionare erori
+    // handle errors
     socket.on("error", (error) => {
       console.error(`Socket error for user ${socket.user.id}:`, error);
     });
 
-    // Abonare la canale
+    // subscribe to channels
     socket.on("subscribe", async ({ teamId, channelId }) => {
       try {
         if (!teamId || !channelId) {
           throw new Error("Team ID and Channel ID are required");
         }
 
-        // Părăsește canalele anterioare
         const previousChannels = userChannels.get(socket.user.id) || [];
         previousChannels.forEach((ch) => socket.leave(ch));
 
-        // Alătură-te noului canal
         const channelRoom = `team:${teamId}:channel:${channelId}`;
         socket.join(channelRoom);
         userChannels.set(socket.user.id, [channelRoom]);
 
-        // Obține istoricul mesajelor
         const messages = await apiService.getChannelMessages(
           channelId,
           socket.handshake.auth.token
@@ -59,7 +57,7 @@ export default (io, apiService) => {
       }
     });
 
-    // Mesaj nou
+    // handle new messages
     socket.on("message", async ({ teamId, channelId, content }) => {
       try {
         if (!teamId || !channelId || !content) {
@@ -77,7 +75,6 @@ export default (io, apiService) => {
           socket.handshake.auth.token
         );
 
-        // Difuzează mesajul
         io.to(`team:${teamId}:channel:${channelId}`).emit(
           "message",
           savedMessage
@@ -91,7 +88,7 @@ export default (io, apiService) => {
       }
     });
 
-    // Indicatori de tastare
+    // handle typing indicators
     socket.on("typing", ({ teamId, channelId, isTyping }) => {
       try {
         if (!teamId || !channelId) {
@@ -107,7 +104,7 @@ export default (io, apiService) => {
       }
     });
 
-    // Deconectare
+    // handle disconnection
     socket.on("disconnect", () => {
       console.log(`User disconnected: ${socket.user.id}`);
       activeUsers.delete(socket.user.id);

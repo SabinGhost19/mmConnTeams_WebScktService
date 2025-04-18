@@ -25,28 +25,28 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
-// Create Socket.IO server
+// create Socket.IO server
 const io = new Server(server, {
   cors: corsOptions,
   path: "/ws",
 });
 
-// Cache for active channels with connected users
+// cache for active channels with connected users
 const activeChannels = new Map();
-// Cache for channel messages to reduce API calls
+// cache for channel messages to reduce API calls
 const channelMessagesCache = new Map();
 
-// Use authentication middleware
+// use authentication middleware
 io.use(authenticateSocket);
 
-// Socket connection handler
+// socket connection handler
 io.on("connection", async (socket) => {
   console.log(`User connected: ${socket.user.id} (${socket.user.name})`);
 
-  // Track user token for API calls
+  // track user token for API calls
   const userToken = socket.handshake.auth.token;
 
-  // Join a channel
+  // join a channel
   socket.on("join-channel", async (data) => {
     try {
       const { channelId } = data;
@@ -58,16 +58,16 @@ io.on("connection", async (socket) => {
 
       console.log(`User ${socket.user.id} joining channel ${channelId}`);
 
-      // Join socket room for this channel
+      // join socket room for this channel
       socket.join(`channel:${channelId}`);
 
-      // Track active users in the channel
+      // track active users in the channel
       if (!activeChannels.has(channelId)) {
         activeChannels.set(channelId, new Set());
       }
       activeChannels.get(channelId).add(socket.user.id);
 
-      // Notify other users in the channel
+      // notify other users in the channel
       socket.to(`channel:${channelId}`).emit("user-joined", {
         channelId,
         user: {
@@ -77,9 +77,9 @@ io.on("connection", async (socket) => {
         timestamp: new Date().toISOString(),
       });
 
-      // Fetch channel messages and send to the user
+      // fetch channel messages and send to the user
       try {
-        // Try to get messages from cache first
+        // try to get messages from cache first
         let messages;
         const cacheKey = `${channelId}`;
 
@@ -87,11 +87,11 @@ io.on("connection", async (socket) => {
           console.log(`Using cached messages for channel ${channelId}`);
           messages = channelMessagesCache.get(cacheKey);
         } else {
-          // If not in cache, fetch from API
+          // if not in cache, fetch from API
           console.log(`Fetching messages from API for channel ${channelId}`);
           messages = await getChannelMessages(channelId, userToken);
 
-          // Store in cache for future use (5 minutes expiry)
+          // store in cache for future use (5 minutes expiry)
           channelMessagesCache.set(cacheKey, messages);
           setTimeout(() => {
             channelMessagesCache.delete(cacheKey);
@@ -113,7 +113,7 @@ io.on("connection", async (socket) => {
         });
       }
 
-      // Confirm subscription
+      // confirm subscription
       socket.emit("channel-joined", {
         channelId,
         timestamp: new Date().toISOString(),
@@ -125,23 +125,23 @@ io.on("connection", async (socket) => {
     }
   });
 
-  // Leave a channel
+  // leave a channel
   socket.on("leave-channel", (data) => {
     const { channelId } = data;
 
     if (channelId && activeChannels.has(channelId)) {
-      // Remove user from channel tracking
+      // remove user from channel tracking
       activeChannels.get(channelId).delete(socket.user.id);
 
-      // Clean up empty channels
+      // clean up empty channels
       if (activeChannels.get(channelId).size === 0) {
         activeChannels.delete(channelId);
       }
 
-      // Leave the socket room
+      // leave the socket room
       socket.leave(`channel:${channelId}`);
 
-      // Notify others
+      // notify others
       socket.to(`channel:${channelId}`).emit("user-left", {
         channelId,
         userId: socket.user.id,
@@ -150,7 +150,7 @@ io.on("connection", async (socket) => {
     }
   });
 
-  // New message event handler
+  // new message event handler
   socket.on("new-message", async (messageData) => {
     try {
       const { channelId, content, attachments = [] } = messageData;
@@ -162,7 +162,7 @@ io.on("connection", async (socket) => {
         return;
       }
 
-      // Create message object
+      // create message object
       const newMessage = {
         channelId,
         content,
@@ -170,21 +170,21 @@ io.on("connection", async (socket) => {
         createdAt: new Date().toISOString(),
       };
 
-      // Save to database via API
+      // save to database via API
       try {
         const savedMessage = await createMessage(newMessage, userToken);
 
-        // Update cache if it exists
+        // update cache if it exists
         const cacheKey = `${channelId}`;
         if (channelMessagesCache.has(cacheKey)) {
           const cachedMessages = channelMessagesCache.get(cacheKey);
           channelMessagesCache.set(cacheKey, [...cachedMessages, savedMessage]);
         }
 
-        // Broadcast to all users in channel
+        // broadcast to all users in channel
         io.to(`channel:${channelId}`).emit("message", savedMessage);
 
-        // Confirm to sender
+        // confirm to sender
         socket.emit("message-sent", {
           messageId: savedMessage.id,
           status: "delivered",
@@ -203,7 +203,7 @@ io.on("connection", async (socket) => {
     }
   });
 
-  // Handle file upload notifications
+  // handle file upload notifications
   socket.on("file-upload-complete", async (data) => {
     try {
       const { channelId, fileData } = data;
@@ -219,7 +219,7 @@ io.on("connection", async (socket) => {
         `User ${socket.user.id} uploaded file ${fileData.fileName} to channel ${channelId}`
       );
 
-      // Broadcast to all users in the channel about the new file
+      // broadcast to all users in the channel about the new file
       io.to(`channel:${channelId}`).emit("file-uploaded", {
         channelId,
         fileData,
@@ -230,11 +230,11 @@ io.on("connection", async (socket) => {
         timestamp: new Date().toISOString(),
       });
 
-      // Update cache if needed - similar to message handling
+      // update cache if needed - similar to message handling
       const cacheKey = `${channelId}`;
       if (channelMessagesCache.has(cacheKey)) {
-        // If there's a message with this attachment, no need to update cache
-        // The message handler will take care of that
+        // if there's a message with this attachment, no need to update cache
+        // the message handler will take care of that
         console.log(
           `Cache exists for channel ${channelId}, will be updated by message handler`
         );
@@ -247,7 +247,7 @@ io.on("connection", async (socket) => {
     }
   });
 
-  // Message reaction handler
+  // message reaction handler
   socket.on("add-reaction", async (data) => {
     try {
       const { messageId, channelId, reactionType } = data;
@@ -269,7 +269,7 @@ io.on("connection", async (socket) => {
       console.log("Chid: " + channelId);
       console.log("ReactionType: " + reactionType);
 
-      // Check if this message exists in cache
+      // check if this message exists in cache
       const cacheKey = `${channelId}`;
       let existingReaction = null;
 
@@ -285,7 +285,7 @@ io.on("connection", async (socket) => {
         }
       }
 
-      // If reaction already exists, remove it (toggle behavior)
+      // if reaction already exists, remove it
       if (existingReaction) {
         console.log(
           `Found existing reaction, removing it: ${existingReaction.id}`
@@ -300,7 +300,7 @@ io.on("connection", async (socket) => {
             userToken
           );
 
-          // Update cache if it exists
+          // update cache if it exists
           if (channelMessagesCache.has(cacheKey)) {
             const cachedMessages = channelMessagesCache.get(cacheKey);
             const updatedMessages = cachedMessages.map((msg) => {
@@ -317,7 +317,7 @@ io.on("connection", async (socket) => {
             channelMessagesCache.set(cacheKey, updatedMessages);
           }
 
-          // Broadcast removal to channel
+          // broadcast removal to channel
           io.to(`channel:${channelId}`).emit("reaction-update", {
             id: existingReaction.id,
             messageId,
@@ -327,17 +327,17 @@ io.on("connection", async (socket) => {
             action: "remove",
           });
 
-          return; // Exit early after removing
+          return; // rxit early after removing
         } catch (error) {
           console.error("Error removing existing reaction:", error);
         }
       }
 
-      // If no existing reaction or removal failed, add new reaction
+      // if no existing reaction or removal failed, add new reaction
       try {
         const savedReaction = await addReaction(messageId, reaction, userToken);
 
-        // Update cache if it exists
+        // pdate cache if it exists
         if (channelMessagesCache.has(cacheKey)) {
           const cachedMessages = channelMessagesCache.get(cacheKey);
           const updatedMessages = cachedMessages.map((msg) => {
@@ -352,7 +352,7 @@ io.on("connection", async (socket) => {
           channelMessagesCache.set(cacheKey, updatedMessages);
         }
 
-        // Create a full reaction object to broadcast
+        // create a full reaction object to broadcast
         const reactionData = {
           id: savedReaction.id,
           messageId,
@@ -363,7 +363,7 @@ io.on("connection", async (socket) => {
         };
         console.log("REACTION DATA: " + reactionData);
 
-        // Broadcast to channel
+        // broadcast to channel
         io.to(`channel:${channelId}`).emit("reaction-update", reactionData);
       } catch (error) {
         console.error("Error adding reaction:", error);
@@ -378,7 +378,7 @@ io.on("connection", async (socket) => {
     }
   });
 
-  // Remove reaction handler
+  // rmv reaction handler
   socket.on("remove-reaction", async (data) => {
     try {
       const { messageId, reactionId, channelId, reactionType } = data;
@@ -391,7 +391,7 @@ io.on("connection", async (socket) => {
         return;
       }
 
-      // Remove from database via API
+      // rmv from database via API
       try {
         await removeReaction(
           messageId,
@@ -401,7 +401,7 @@ io.on("connection", async (socket) => {
           userToken
         );
 
-        // Update cache if it exists
+        // update cache if it exists
         const cacheKey = `${channelId}`;
         if (channelMessagesCache.has(cacheKey)) {
           const cachedMessages = channelMessagesCache.get(cacheKey);
@@ -419,7 +419,7 @@ io.on("connection", async (socket) => {
           channelMessagesCache.set(cacheKey, updatedMessages);
         }
 
-        // Broadcast to channel
+        // broadcast to channel
         io.to(`channel:${channelId}`).emit("reaction-update", {
           id: reactionId,
           messageId,
@@ -440,7 +440,7 @@ io.on("connection", async (socket) => {
       socket.emit("error", { message: "Failed to process reaction removal" });
     }
   });
-  // Force refresh channel messages
+  // force refresh channel messages
   socket.on("refresh-messages", async (data) => {
     try {
       const { channelId } = data;
@@ -450,17 +450,17 @@ io.on("connection", async (socket) => {
         return;
       }
 
-      // Clear cache for this channel
+      // clear cache for this channel
       const cacheKey = `${channelId}`;
       channelMessagesCache.delete(cacheKey);
 
-      // Fetch fresh messages
+      // fetch fresh messages
       const messages = await getChannelMessages(channelId, userToken);
 
-      // Update cache
+      // update cache
       channelMessagesCache.set(cacheKey, messages);
 
-      // Send to user
+      // send to user
       socket.emit("channel-history", { channelId, messages });
     } catch (error) {
       console.error(
@@ -474,7 +474,7 @@ io.on("connection", async (socket) => {
     }
   });
 
-  // Handle typing indicators
+  // handle typing indicators
   socket.on("typing", (data) => {
     const { channelId, isTyping } = data;
 
@@ -489,7 +489,7 @@ io.on("connection", async (socket) => {
     }
   });
 
-  // Handle legacy test channel for backward compatibility
+  // handle legacy test channel for backward compatibility
   socket.on("subscribe-to-test", (data) => {
     socket.join("test-room");
     socket.emit("subscription-confirmed", {
@@ -515,23 +515,23 @@ io.on("connection", async (socket) => {
     });
   });
 
-  // Disconnect handler
+  // disconnect handler
   socket.on("disconnect", () => {
     console.log(`User disconnected: ${socket.user.id}`);
 
-    // Clean up user from all active channels
+    // clean up user from all active channels
     for (const [channelId, users] of activeChannels.entries()) {
       if (users.has(socket.user.id)) {
         users.delete(socket.user.id);
 
-        // Notify channel users
+        // notify channel users
         socket.to(`channel:${channelId}`).emit("user-left", {
           channelId,
           userId: socket.user.id,
           timestamp: new Date().toISOString(),
         });
 
-        // Remove empty channels
+        // remove empty channels
         if (users.size === 0) {
           activeChannels.delete(channelId);
         }
@@ -540,7 +540,7 @@ io.on("connection", async (socket) => {
   });
 });
 
-// Health check route
+// health check route
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
@@ -551,7 +551,7 @@ app.get("/health", (req, res) => {
   });
 });
 
-// Start server
+// start server
 const PORT = process.env.PORT || 8082;
 server.listen(PORT, () => {
   console.log(`
